@@ -1,5 +1,6 @@
 exec
 ====
+[![Build Status](https://drone.io/github.com/shxsun/exec/status.png)](https://drone.io/github.com/shxsun/exec/latest)
 
 An implement of os/exec, but add timeout option
 
