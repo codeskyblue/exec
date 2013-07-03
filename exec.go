@@ -14,34 +14,35 @@ import (
 	"strings"
 	"syscall"
 	"time"
+    "github.com/shxsun/beelog"
 )
 
-type JfCmd struct {
+var ErrInvalid = errors.New("error invalid")
+var ErrTimeout = errors.New("error timeout")
+
+type SuperCmd struct {
 	*exec.Cmd
 	Timeout time.Duration
-	EnvFlag string
+    EnvKey string
+    EnvVal string
 	IsClean bool
 }
 
 // create a new instance
-func Command(name string, args ...string) *JfCmd {
-	return &JfCmd{exec.Command(name, args...), 0, "", false}
+func Command(name string, args ...string) *SuperCmd {
+	return &SuperCmd{exec.Command(name, args...), 0, "", "", false}
 }
 
 // run command and wait until program exits or timeout
-func (c *JfCmd) Run() (err error) {
-	log.Println("Start Run:", c.Args)
+func (c *SuperCmd) Run() (err error) {
+    beelog.Info("start run:", c.Args)
 	ch := make(chan error)
-	var key, val string
 	// set env flag
 	if c.IsClean {
-		if v := strings.SplitN(c.EnvFlag, "=", 2); len(v) != 2 {
-			return errors.New("EnvFlag not set as KEY=VALUE")
-		} else {
-			key, val = v[0], v[1]
-			log.Println(v)
-			c.Env = append(c.Env, c.EnvFlag)
+        if c.EnvKey == "" || c.EnvVal == ""  {
+			return ErrInvalid
 		}
+        c.Env = append(c.Env, fmt.Sprintf("%s=%s", c.EnvKey, c.EnvVal))
 	}
 	// start program
 	if err = c.Start(); err != nil {
@@ -68,19 +69,23 @@ func (c *JfCmd) Run() (err error) {
 				log.Println(err)
 			}
 
-			return errors.New("timeout")
+			return ErrTimeout
 		}
 	}
 	if c.IsClean {
 		log.Printf("Do clean")
-		KillallByEnv(key, val, syscall.SIGTERM)
-		KillallByEnv(key, val, syscall.SIGKILL)
+        c.KillAll()
 	}
 	return <-ch
 }
 
+func (c *SuperCmd) KillAll() {
+    killAllEnv(c.EnvKey, c.EnvVal, syscall.SIGTERM)
+    killAllEnv(c.EnvKey, c.EnvVal, syscall.SIGKILL)
+}
+
 // Output runs the command and returns its standard output.
-func (c *JfCmd) Output() ([]byte, error) {
+func (c *SuperCmd) Output() ([]byte, error) {
 	if c.Stdout != nil {
 		return nil, errors.New("exec: Stdout already set")
 	}
@@ -91,7 +96,7 @@ func (c *JfCmd) Output() ([]byte, error) {
 }
 
 // Read Process Env
-func ReadProcessEnv(pid int) (m map[string]string, e error) {
+func readProcessEnv(pid int) (m map[string]string, e error) {
 	m = make(map[string]string)
 	fd, e := os.Open("/proc/" + strconv.Itoa(pid) + "/environ")
 	if e != nil {
@@ -118,7 +123,7 @@ func ReadProcessEnv(pid int) (m map[string]string, e error) {
 }
 
 // Walk all proc and kill by Env which contails key=value
-func KillallByEnv(key string, value string, sig syscall.Signal) {
+func killAllEnv(key string, value string, sig syscall.Signal) {
 	log.Printf("Start kill by env %s=%s %s\n", key, value, sig)
 	files, _ := ioutil.ReadDir("/proc")
 	for _, file := range files {
@@ -127,7 +132,7 @@ func KillallByEnv(key string, value string, sig syscall.Signal) {
 			if e != nil {
 				continue
 			}
-			env, err := ReadProcessEnv(pid)
+			env, err := readProcessEnv(pid)
 			if err != nil {
 				continue
 			}
