@@ -16,8 +16,19 @@ func TestNormal(t *testing.T) {
 	}
 }
 
-// FIXME
 func TestNormalTimeout(t *testing.T) {
+    cmd := Command("sleep", "2")
+    err := cmd.Start()
+    if err != nil {
+        t.Error(err)
+    }
+    err = cmd.WaitTimeout(time.Second * 1)
+    if err == nil {
+        t.Errorf("expect ErrTimeout, but err is nil")
+    }
+    if err != ErrTimeout {
+        t.Errorf("expect ErrTimeout, but receive %s", err.Error())
+    }
 }
 
 func TestTimeout(t *testing.T) {
