@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/shxsun/beelog"
-	"github.com/shxsun/monitor"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -80,32 +79,6 @@ func (c *Cmd) Run() (err error) {
 		return
 	} else if err == ErrTimeout {
 		c.Process.Kill()
-	}
-	return
-}
-
-func (c *Cmd) KillAll() (err error) {
-	sig := syscall.SIGTERM
-	pids, err := monitor.Pids()
-	if err != nil {
-		return
-	}
-	for _, pid := range pids {
-		envs, err := procEnv(pid)
-		if err != nil {
-			continue
-		}
-		flag := ""
-		for _, e := range envs {
-			if strings.HasPrefix(e, defaultEnvName+"=") {
-				flag = e
-				break
-			}
-		}
-		if flag == defaultEnvName+"="+c.UniqID {
-			beelog.Trace("kill", sig, pid)
-			syscall.Kill(pid, sig)
-		}
 	}
 	return
 }
