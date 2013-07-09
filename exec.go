@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/shxsun/beelog"
+	"github.com/shxsun/monitor"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"strconv"
@@ -19,20 +21,27 @@ import (
 var ErrInvalid = errors.New("error invalid")
 var ErrTimeout = errors.New("error timeout")
 
-type SuperCmd struct {
-	*exec.Cmd
+var defaultEnvName = "TIMEOUT_EXEC_ID"
+
+type Cmd struct {
 	Timeout time.Duration
-	EnvKey  string
-	EnvVal  string
+	UniqID  string
 	IsClean bool
+	*exec.Cmd
+}
+
+func init() {
+	beelog.SetLevel(beelog.LevelWarning)
 }
 
 // create a new instance
-func Command(name string, args ...string) *SuperCmd {
-	return &SuperCmd{exec.Command(name, args...), 0, "", "", false}
+func Command(name string, args ...string) *Cmd {
+	cmd := &Cmd{}
+	cmd.Cmd = exec.Command(name, args...)
+	return cmd
 }
 
-func (c *SuperCmd) WaitTimeout(timeout time.Duration) error {
+func (c *Cmd) WaitTimeout(timeout time.Duration) error {
 	done := make(chan error)
 	go func() {
 		done <- c.Wait()
@@ -47,14 +56,14 @@ func (c *SuperCmd) WaitTimeout(timeout time.Duration) error {
 }
 
 // run command and wait until program exits or timeout
-func (c *SuperCmd) Run() (err error) {
+func (c *Cmd) Run() (err error) {
 	beelog.Info("start run:", c.Args)
 	// set env flag
 	if c.IsClean {
-		if c.EnvKey == "" || c.EnvVal == "" {
-			return ErrInvalid
+		if c.UniqID == "" {
+			c.UniqID = fmt.Sprintf("%d:%d", time.Now().UnixNano(), rand.Int())
 		}
-		c.Env = append(c.Env, fmt.Sprintf("%s=%s", c.EnvKey, c.EnvVal))
+		c.Env = append(c.Env, defaultEnvName+"="+c.UniqID)
 	}
 	// start program
 	if err = c.Start(); err != nil {
@@ -69,20 +78,40 @@ func (c *SuperCmd) Run() (err error) {
 	if c.IsClean {
 		c.KillAll()
 		return
-	}
-	if err == ErrTimeout {
+	} else if err == ErrTimeout {
 		c.Process.Kill()
 	}
 	return
 }
 
-func (c *SuperCmd) KillAll() {
-	killAllEnv(c.EnvKey, c.EnvVal, syscall.SIGTERM)
-	killAllEnv(c.EnvKey, c.EnvVal, syscall.SIGKILL)
+func (c *Cmd) KillAll() (err error) {
+	sig := syscall.SIGTERM
+	pids, err := monitor.Pids()
+	if err != nil {
+		return
+	}
+	for _, pid := range pids {
+		envs, err := procEnv(pid)
+		if err != nil {
+			continue
+		}
+		flag := ""
+		for _, e := range envs {
+			if strings.HasPrefix(e, defaultEnvName+"=") {
+				flag = e
+				break
+			}
+		}
+		if flag == defaultEnvName+"="+c.UniqID {
+			beelog.Trace("kill", sig, pid)
+			syscall.Kill(pid, sig)
+		}
+	}
+	return
 }
 
 // Output runs the command and returns its standard output.
-func (c *SuperCmd) Output() ([]byte, error) {
+func (c *Cmd) Output() ([]byte, error) {
 	if c.Stdout != nil {
 		return nil, errors.New("exec: Stdout already set")
 	}
@@ -90,6 +119,16 @@ func (c *SuperCmd) Output() ([]byte, error) {
 	c.Stdout = &b
 	err := c.Run()
 	return b.Bytes(), err
+}
+
+// get spectified pid of environ
+func procEnv(pid int) ([]string, error) {
+	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		return nil, err
+	}
+	envs := strings.Split(string(data), "\x00")
+	return envs, nil
 }
 
 // Read Process Env
