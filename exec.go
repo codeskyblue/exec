@@ -1,19 +1,14 @@
 package exec
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"github.com/shxsun/beelog"
-	"io"
 	"io/ioutil"
 	"math/rand"
-	"os"
 	"os/exec"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -102,56 +97,4 @@ func procEnv(pid int) ([]string, error) {
 	}
 	envs := strings.Split(string(data), "\x00")
 	return envs, nil
-}
-
-// Read Process Env
-func readProcessEnv(pid int) (m map[string]string, e error) {
-	m = make(map[string]string)
-	fd, e := os.Open("/proc/" + strconv.Itoa(pid) + "/environ")
-	if e != nil {
-		return nil, e
-	}
-	bi := bufio.NewReader(fd)
-	for {
-		line, err := bi.ReadString(byte(0))
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, err
-		}
-
-		kv := strings.SplitN(line, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		key, value := kv[0], kv[1]
-		m[key] = value[:len(value)-1] // remove last \0
-	}
-	return
-}
-
-// Walk all proc and kill by Env which contails key=value
-func killAllEnv(key string, value string, sig syscall.Signal) {
-	beelog.Debug("kill by env, send ", sig)
-	files, _ := ioutil.ReadDir("/proc")
-	for _, file := range files {
-		if file.IsDir() {
-			pid, e := strconv.Atoi(file.Name())
-			if e != nil {
-				continue
-			}
-			env, err := readProcessEnv(pid)
-			if err != nil {
-				continue
-			}
-			if x, ok := env[key]; ok {
-				//fmt.Println("CATCH ENV:", x, "PID:", pid)
-				if x == value {
-					beelog.Trace("kill", sig, pid)
-					syscall.Kill(pid, sig)
-				}
-			}
-		}
-	}
 }
