@@ -8,6 +8,9 @@ import (
 )
 
 func (c *Cmd) KillAll() (err error) {
+	if c.Process != nil {
+		c.Process.Kill()
+	}
 	sig := syscall.SIGTERM
 	pids, err := monitor.Pids()
 	if err != nil {
