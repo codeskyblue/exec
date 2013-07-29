@@ -1,6 +1,9 @@
 package exec
 
 import (
+	"bytes"
+	"fmt"
+	"github.com/shxsun/monitor"
 	"testing"
 	"time"
 )
@@ -38,6 +41,20 @@ func TestTimeout(t *testing.T) {
 	if err != ErrTimeout {
 		t.Errorf("expect ErrTimeout, but got: %s\n", err.Error())
 	}
+}
+
+func TestKillAll(t *testing.T) {
+	b := bytes.NewBuffer(nil)
+	cmd := Command("sh", "testdata/killall_test.sh")
+	cmd.IsClean = true
+	cmd.Stdout = b
+	cmd.Start()
+	time.Sleep(200 * time.Millisecond)
+	var pid int
+	fmt.Sscanf(string(b.Bytes()), "%d", &pid)
+	cmd.KillAll()
+	minfo, err := monitor.Pid(pid + 1) // main quit, sleep is main_pid + 1
+	fmt.Println(minfo, err)            // FIXME: not finished
 }
 
 // FIXME

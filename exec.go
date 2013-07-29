@@ -26,6 +26,7 @@ type Cmd struct {
 
 func init() {
 	beelog.SetLevel(beelog.LevelWarning)
+	//beelog.SetLevel(beelog.LevelTrace)
 }
 
 // create a new instance
